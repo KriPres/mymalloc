@@ -1,10 +1,10 @@
 CC = gcc
-CFLAGS = -std=c99 -g -Wall -fsanitize=address,undefined
+CFLAGS = -std=c99 -g -Wvla -Wall -fsanitize=address,undefined
 
 # By default, build everything
 .PHONY: all clean
 
-all: memtest memtest_real
+all: memtest leaker # add memgrind later
 
 # Stress tester (main) - UNCOMMENT WHEN IMPLEMENTED
 
@@ -29,7 +29,12 @@ memtest.o: memtest.c mymalloc.h
 mymalloc.o: mymalloc.c mymalloc.h
 	$(CC) $(CFLAGS) -c $<
 
+leakymemtest.o: memtest.c mymalloc.h
+	$(CC) -c $(CFLAGS) -DLEAK $< -o $@
+
+leaker: leakymemtest.o mymalloc.o
+	$(CC) $(CFLAGS) -o $@ $^
 # In the end, remove all compiled files
 clean:
-	rm -f *.o memtest memtest_real
+	rm -f *.o memtest leaker
 
