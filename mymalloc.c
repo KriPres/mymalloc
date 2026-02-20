@@ -147,10 +147,9 @@ void myfree(void* ptr, char* file, int line){
         chunk->is_free = 1;
     }
 
+    // Coalescing
     metadata_t *current = (metadata_t *) heap.bytes;
     
-
-
     while((char *) current < heap.bytes + MEMLENGTH){
 
         if (current->is_free) {

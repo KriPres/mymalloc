@@ -42,4 +42,7 @@ then free everything remaining
 
 Tasks 4 & 5 — you design these, should simulate realistic usage like a linked list or array resizing.
 
+Task 6 -> Design a scenario where the user does simulatenous mallocs and frees to check if coalescing works or not
+# Should print out a diagrammatic representing of heap before coalescing and after coalescing. 
+
 */
