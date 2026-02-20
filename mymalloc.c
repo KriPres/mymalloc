@@ -14,7 +14,7 @@ static union{
 
 
 typedef struct {
-    size_t size;     // 8 bytes
+    int size;     // 8 bytes
     int is_free;     // 4 bytes - 1 if free, 0 if not.
 } metadata_t;
 
@@ -28,7 +28,7 @@ static void leak_detector();
 
 static void heap_init(){
     metadata_t *first = (metadata_t *) heap.bytes;
-    first->size = MEMLENGTH - METADATA_SIZE;  // 4096 - 16 = 4080 bytes of payload
+    first->size = MEMLENGTH - METADATA_SIZE;  // 4096 - 8 = 4088 bytes of payload
     first->is_free = 1;
 
     atexit(leak_detector);   // register leak detector to run at program exit
@@ -67,7 +67,7 @@ void* mymalloc(size_t size, char* file, int line){
     }
 
     // For rounding up to the next greater than or equal to multiple of 8
-    // For any number of form 8k to 8k+1, if we need the multiple of 8 which is greater than or equal to it
+    // For any number of form 8k to 8k+7, if we need the multiple of 8 which is greater than or equal to it
     // We can add 7 to the term and then round it down.
 
     size = (size+7) & ~7;
@@ -79,10 +79,10 @@ void* mymalloc(size_t size, char* file, int line){
     while ((char*) chunk < heap.bytes + MEMLENGTH) {
 
     if (chunk->is_free && chunk->size >= size) {
-        // split if leftover is big enough
+        // assign only what's necessary
         if (chunk->size >= size + METADATA_SIZE + 8) {
             metadata_t *next = (metadata_t *)((char *) chunk + METADATA_SIZE + size);
-            next->size    = chunk->size - size - METADATA_SIZE;
+            next->size = chunk->size - size - METADATA_SIZE;
             next->is_free = 1;
             chunk->size   = size;
         }
@@ -104,6 +104,30 @@ void myfree(void* ptr, char* file, int line){
     if(!initialized){
         heap_init();
     }
+
+    if(ptr == NULL){
+            return;
+    }
+
+    // the pointer has to be in a valid position for the free() to work
+    // if the pointer is before the end of the heap metadata or after MEMLEGTH,
+    // then, it's out of bounds
+    if((char* ) ptr < heap.bytes + METADATA_SIZE || (char* ) ptr >= heap.bytes + MEMLENGTH){
+        fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
+        exit(2);
+    }
+
+    metadata_t* chunk = (metadata_t *) heap.bytes;
+
+    while((char *) chunk < heap.bytes + MEMLENGTH){
+
+        if((char *) chunk + METADATA_SIZE == ptr){
+
+        }
+
+        chunk = (metadata_t *)((char*)chunk + METADATA_SIZE + chunk->size);
+    }
+
 
     // TODO: implement free
     fprintf(stderr, "myfree: not yet implemented (%s:%d)\n", file, line);
