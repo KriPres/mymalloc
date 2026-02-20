@@ -14,7 +14,7 @@ static union{
 
 
 typedef struct {
-    int size;     // 8 bytes
+    int size;         // 4 bytes
     int is_free;     // 4 bytes - 1 if free, 0 if not.
 } metadata_t;
 
@@ -94,8 +94,8 @@ void* mymalloc(size_t size, char* file, int line){
     // not free or not big enough — move to next chunk
     chunk = (metadata_t *)((char *) chunk + METADATA_SIZE + chunk->size);
 }
-    // TODO: implement allocation
-    fprintf(stderr, "mymalloc: not yet implemented (%s:%d)\n", file, line);
+
+    fprintf(stderr, "malloc: Unable to allocate %zu bytes (%s:%d)\n", size, file, line);
     return NULL;
 }
 
@@ -118,17 +118,56 @@ void myfree(void* ptr, char* file, int line){
     }
 
     metadata_t* chunk = (metadata_t *) heap.bytes;
+    int found = 0;
 
     while((char *) chunk < heap.bytes + MEMLENGTH){
 
         if((char *) chunk + METADATA_SIZE == ptr){
-
+            found = 1;
+            break;
         }
 
         chunk = (metadata_t *)((char*)chunk + METADATA_SIZE + chunk->size);
     }
 
+    // if till the end, not found
+    if(found == 0){
+        fprintf(stderr, "Chunk address not found (%s:%d)\n", file, line);
+        exit(2);
+    }
+    
+    // if the free block was successfully found:
+    // 1. check if it's already free
+    if(found == 1 && chunk->is_free == 1){
+        fprintf(stderr, "Chunk at address is already free (%s:%d)\n", file, line);
+        exit(2);
+    }
 
-    // TODO: implement free
-    fprintf(stderr, "myfree: not yet implemented (%s:%d)\n", file, line);
+    else{
+        chunk->is_free = 1;
+    }
+
+    metadata_t *current = (metadata_t *) heap.bytes;
+    
+
+
+    while((char *) current < heap.bytes + MEMLENGTH){
+
+        if (current->is_free) {
+        metadata_t *next = (metadata_t *)((char*)current + METADATA_SIZE + current->size);
+        if ((char*)next < heap.bytes + MEMLENGTH && next->is_free) {
+            // merge: absorb next into current
+            current->size = current->size + METADATA_SIZE + next->size;
+            // don't advance — recheck in case next-next is also free
+        } 
+        else {
+        current = (metadata_t *)((char*)current + METADATA_SIZE + current->size);
+        }
+    } 
+    
+    else {
+        current = (metadata_t *)((char*)current + METADATA_SIZE + current->size);
+    }
+    
+    }
 }
