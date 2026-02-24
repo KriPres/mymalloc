@@ -62,12 +62,17 @@ To run the same test with the real system malloc for comparison:
 RUNNING THE INDIVIDUAL TESTS
 ------------------------------
     ./test <test_number>
+    ./test_real <test_number>
 
-Where test_number is an integer from 0 to 17. For example:
+Where test_number is an integer from 0 to 24. For example:
 
     ./test 17      runs the normal malloc/free sanity check
     ./test 14      runs the stack variable free error test
     ./test 10      runs the coalescing test
+
+    ./test_real 17  same as above, but with real malloc
+    ./test_real 14  same as above, but with real malloc
+    ./test_real 10  same as above, but with real malloc
 
 To run all individual tests automatically:
 
