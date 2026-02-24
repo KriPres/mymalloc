@@ -3,7 +3,6 @@
 #include <unistd.h>
 #include <string.h>
 
-
 // Compile with -DREALMALLOC to use the real malloc() instead of mymalloc()
 #ifndef REALMALLOC
 #include "mymalloc.h"
@@ -21,7 +20,7 @@
 
 int 
 main (int argc, char **argv)
-{
+{	
 	char *obj[OBJECTS];
 	int i, j, errors = 0;
 	

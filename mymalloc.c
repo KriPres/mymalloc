@@ -1,172 +1,362 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <unistd.h>
 #include "mymalloc.h"
 
-// Heap storage — all metadata AND user data lives in here
+/*
+This file contains the implementation for the mymalloc library, defining
+the following key functions:
+1. heap_init()
+2. leak_detector()
+3. mymalloc()
+4. myfree()
+ */ 
 
-#define MEMLENGTH 4096
+#define MEMLENGTH 4096 // size of char array to represent memory
+#define DEBUG 1 // flag to show intermediate debugging code (1 to show; 0 to not show)
+#define EXTRA_DEBUG 0 // flag to show more fine-grained debuggin print statments (1 to show; 0 to not show)
 
-static union{
+// defining bytes char array used to represent memory
+// accessed via heap.bytes
+static union {
     char bytes[MEMLENGTH];
-    double unused;
+    double not_used;
 } heap;
 
-
-typedef struct {
-    int size;         // 4 bytes
-    int is_free;     // 4 bytes - 1 if free, 0 if not.
+// creating a struct for metadata with 2 integer fields:
+// 1. is allocated - int - 4 bytes
+// 2. size - int - 4 bytes
+// metadata_t = 4 + 4 = 8 bytes
+typedef struct{
+    int size;
+    int is_free; // 1 if free, 0 if allocated
 } metadata_t;
 
 #define METADATA_SIZE sizeof(metadata_t)
 
+// static variable to check if memory has been initialized
+// 1 if initialized, 0 otherwise
 static int initialized = 0;
 
-// Initializations
-static void heap_init();
-static void leak_detector();
+// leak detector function that displays how much memory is being used across how many objects
+void leak_detector(){
 
-static void heap_init(){
-    metadata_t *first = (metadata_t *) heap.bytes;
-    first->size = MEMLENGTH - METADATA_SIZE;  // 4096 - 8 = 4088 bytes of payload
+    int num_objects = 0;
+    int total_size = 0;
+
+    // pointer to start of heap.bytes array
+    char * ptr = heap.bytes;
+
+    // metadata pointer variable used to access size, is_free attributes during traversal
+    metadata_t * chunk = NULL;
+
+    // loop through entire heap.bytes array
+    while (ptr < heap.bytes + MEMLENGTH){
+        
+        // get access to metadata chunk
+        chunk = (metadata_t *) ptr;
+        
+        // if memory is allocated, increment counts
+        if (!chunk->is_free){ 
+            num_objects++;
+            total_size += chunk->size;
+        }
+        
+        // increment ptr to next location
+        ptr = ptr + METADATA_SIZE + chunk->size;
+    }
+
+    // print out results from leak detection
+    if (num_objects){
+        fprintf(stderr, "mymalloc: %d bytes leaked in %d objects.\n", total_size, num_objects);
+    }
+
+};
+
+// function to initialize heap at the beginning if it has never been used yet
+void heap_init(){
+
+    // define the entire memory as 1 free chunk
+    metadata_t * first = (metadata_t *) heap.bytes;
+    first->size = MEMLENGTH - METADATA_SIZE;
     first->is_free = 1;
 
-    atexit(leak_detector);   // register leak detector to run at program exit
-
+    // mark static initalized variable to 1 (true)
     initialized = 1;
-}
 
-static void leak_detector(){
-    int count = 0;
-    size_t total = 0;
+    if (DEBUG){printf("Relative heap beginning address: %ld\n\n", heap.bytes - heap.bytes);}
 
-    metadata_t *chunk = (metadata_t *) heap.bytes;
+    // register leak detector
+    atexit(leak_detector);
+};
 
-    while ((char *) chunk < heap.bytes + MEMLENGTH) {
-        if (!chunk->is_free) {
-            count++;
-            total += chunk->size;
-        }
-        chunk = (metadata_t *)((char *) chunk + METADATA_SIZE + chunk->size);
-    }
+/*
+mymalloc function
+args:
+    - size_t: size of data to allocate
+    - char * file: pointer to file calling the function
+    - int line: line number from file calling the function
+purpose: allocates requested amount of data into heap.bytes array
+*/
+void * mymalloc (size_t size, char *file, int line){
 
-    if (count > 0) {
-        fprintf(stderr, "mymalloc: %zu bytes leaked in %d objects.\n", total, count);
-    }
-}
+    if (DEBUG) {printf("LINE # %d\n", line);}
 
-void* mymalloc(size_t size, char* file, int line){
+    // store initial size in case we need to report an inability to store specified number of bytes
+    int original_size = size;
 
-    if(!initialized){
+    // initialize heap if not yet initialized
+    if (!initialized){
         heap_init();
     }
 
-
-    if(size == 0){
+    // define behavior in case of mymalloc(0) to return a NULL pointer
+    if (size == 0){
         return NULL;
     }
 
     // For rounding up to the next greater than or equal to multiple of 8
     // For any number of form 8k to 8k+7, if we need the multiple of 8 which is greater than or equal to it
     // We can add 7 to the term and then round it down.
-
     size = (size+7) & ~7;
 
-    // Walk every chunk from the beginning
-    metadata_t *chunk = (metadata_t *) heap.bytes;
+    // Loop through data in heap
+    char * ptr = heap.bytes;
+    metadata_t * md_ptr = NULL;
 
-    // Type-casting to just compare with similar data type
-    while ((char*) chunk < heap.bytes + MEMLENGTH) {
+    // flag to see if it will be possible to allocate requested memory
+    int possible = 0;
 
-    if (chunk->is_free && chunk->size >= size) {
-        // assign only what's necessary
-        if (chunk->size >= size + METADATA_SIZE + 8) {
-            metadata_t *next = (metadata_t *)((char *) chunk + METADATA_SIZE + size);
-            next->size = chunk->size - size - METADATA_SIZE;
-            next->is_free = 1;
-            chunk->size   = size;
+    if (EXTRA_DEBUG){printf("BEFORE\n\n");}
+
+    while (ptr < heap.bytes + MEMLENGTH){
+
+        // get access to metadata chunk
+        md_ptr = (metadata_t *) ptr;
+
+        if (EXTRA_DEBUG){
+            printf("SIZE: %d\n", md_ptr->size);
+            printf("IS_ALLOC: %d\n\n", !(md_ptr->is_free));
+        }
+        
+        // if current block is free, mark possible as true (1) and break from loop
+        if (md_ptr->is_free == 1 && md_ptr->size >= size){
+            possible = 1;
+            break;
         }
 
-        chunk->is_free = 0;
-        return (char *) chunk + METADATA_SIZE;  // return payload to user
+        // increment ptr to location of next metadata pointer
+        ptr = ptr + METADATA_SIZE + md_ptr->size;
     }
 
-    // not free or not big enough — move to next chunk
-    chunk = (metadata_t *)((char *) chunk + METADATA_SIZE + chunk->size);
-}
+    if (EXTRA_DEBUG){printf("POST LOOP PTR: %ld\n", ptr - heap.bytes);}
 
-    fprintf(stderr, "malloc: Unable to allocate %zu bytes (%s:%d)\n", size, file, line);
-    return NULL;
-}
+    if (possible == 1){
+        
+        md_ptr = (metadata_t *) ptr;
+        int old_size = md_ptr->size; // store previous size of chunk
 
-void myfree(void* ptr, char* file, int line){
+        if (EXTRA_DEBUG){
+            printf("ENDING MD_PTR SIZE: %d\n", md_ptr->size);
+            printf("ENDING MD_PTR IS_ALLOC: %d\n\n", !(md_ptr->is_free));
+            printf("old_size, %d\n", old_size);
+        }
 
-    if(!initialized){
+        // mark the first found free ptr to no longer be free and update its size to that of the requested data's size
+        md_ptr->is_free = 0;
+        md_ptr->size = size;
+
+        // if there is no room for additional free pointers in this segment, keep the size the same, but allocate all of that memory
+        // to the pointer
+        if (old_size - size <= 15){
+            md_ptr->size = old_size;
+        } else {
+
+            // if there is room for additional free pointers in this segment
+            
+            // create a new pointer right after the data we just allocated
+            char * new_ptr = (char *) md_ptr + METADATA_SIZE + md_ptr->size;
+
+            if (EXTRA_DEBUG) {printf("NEW PTR ADDY: %ld\n", new_ptr - heap.bytes);}
+            
+            // cast to metadata_t * to specify attributes
+            metadata_t * new_md_ptr = (metadata_t *) new_ptr;
+
+            if (EXTRA_DEBUG) {printf("NEW METADATA PTR ADDY: %ld\n", (char *) new_md_ptr - heap.bytes);}
+            
+            // specify remaining free chunk - free status and size
+            new_md_ptr->size = old_size - METADATA_SIZE - size;
+            new_md_ptr->is_free = 1;
+
+        }
+
+        if (DEBUG){
+
+            // parse through bytes array and list each chunks is_free status and size
+            char * ptr1 = heap.bytes;
+
+            metadata_t * md_ptr1 = NULL;
+
+            while (ptr1 < heap.bytes + MEMLENGTH){
+                md_ptr1 = (metadata_t *) ptr1;
+                printf("POINTER LOCATION: %ld\n", (char*) (md_ptr1) - heap.bytes);
+                printf("SIZE: %d\n", md_ptr1->size);
+                printf("IS_ALLOC: %d\n", !(md_ptr1->is_free));
+                ptr1 = ptr1 + METADATA_SIZE + md_ptr1->size;
+            }
+
+        }
+        
+        // address to return that points to data
+        void * address = (void *) ((char*)md_ptr + METADATA_SIZE);
+        
+        if (DEBUG){printf("RETURNED ADDRESS OF DATA: %ld\n\n", (char*)address - heap.bytes);}
+        
+        return address;
+
+    } else {
+        // print to stderr if unable to allocate
+        fprintf(stderr, "Unable to allocate %d bytes (%s:%d)\n", original_size, file, line);
+        return NULL;
+    }
+    
+};
+
+/*
+myfree function
+args:
+    - size_t: size of data to allocate
+    - char * file: pointer to file calling the function
+    - int line: line number from file calling the function
+purpose: allocates requested amount of data into heap.bytes array
+*/
+void myfree (void *ptr, char *file, int line){
+
+    if (DEBUG) {printf("LINE # %d\n", line);}
+
+    // initialize heap if not yet initialized
+    if (!initialized){
         heap_init();
     }
 
-    if(ptr == NULL){
-            return;
-    }
-
-    // the pointer has to be in a valid position for the free() to work
-    // if the pointer is before the end of the heap metadata or after MEMLEGTH,
-    // then, it's out of bounds
-    if((char* ) ptr < heap.bytes + METADATA_SIZE || (char* ) ptr >= heap.bytes + MEMLENGTH){
-        fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
+    if (ptr == NULL){
+        fprintf(stderr, "free: Inappropriate pointer (%s:%d)", file, line);
         exit(2);
     }
 
-    metadata_t* chunk = (metadata_t *) heap.bytes;
+    if (DEBUG){printf("target pointer address %ld\n", (char*)ptr - heap.bytes);}
+
+    // flag to check if our requested pointer is found in heap.bytes
     int found = 0;
+    char * byte = heap.bytes;
+    metadata_t * md = NULL;
 
-    while((char *) chunk < heap.bytes + MEMLENGTH){
-
-        if((char *) chunk + METADATA_SIZE == ptr){
+    // iterate through heap.bytes
+    while (byte < heap.bytes + MEMLENGTH){
+        
+        // get access to metadata chunk
+        md = (metadata_t *) byte;
+        
+        if (EXTRA_DEBUG){
+            printf("ptr address %ld\n",  (char *)(byte + METADATA_SIZE) - heap.bytes);
+            printf("condition %d\n", byte + METADATA_SIZE == ptr);
+        }
+        
+        // if current metadata points to desired *ptr, mark found as true and exit loop
+        if (byte + METADATA_SIZE == ptr){
             found = 1;
             break;
         }
 
-        chunk = (metadata_t *)((char*)chunk + METADATA_SIZE + chunk->size);
+        // increment to next metadata pointer
+        byte = byte + METADATA_SIZE + md->size;
     }
 
-    // if till the end, not found
-    if(found == 0){
-        fprintf(stderr, "Chunk address not found (%s:%d)\n", file, line);
-        exit(2);
-    }
-    
-    // if the free block was successfully found:
-    // 1. check if it's already free
-    if(found == 1 && chunk->is_free == 1){
-        fprintf(stderr, "Chunk at address is already free (%s:%d)\n", file, line);
-        exit(2);
-    }
-
-    else{
-        chunk->is_free = 1;
-    }
-
-    // Coalescing
-    metadata_t *current = (metadata_t *) heap.bytes;
-    
-    while((char *) current < heap.bytes + MEMLENGTH){
-
-        if (current->is_free) {
-        metadata_t *next = (metadata_t *)((char*)current + METADATA_SIZE + current->size);
-        if ((char*)next < heap.bytes + MEMLENGTH && next->is_free) {
-            // merge: absorb next into current
-            current->size = current->size + METADATA_SIZE + next->size;
-            // don't advance — recheck in case next-next is also free
-        } 
-        else {
-        current = (metadata_t *)((char*)current + METADATA_SIZE + current->size);
+    // if we find the desired *ptr, mark it as free using the is_free flag
+    if (found){
+        if (md->is_free){
+            fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
+            exit(2);
+        } else {
+            md->is_free = 1;
         }
-    } 
-    
-    else {
-        current = (metadata_t *)((char*)current + METADATA_SIZE + current->size);
+    } else {
+        fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
+        exit(2);
     }
+
+    // parse through bytes array and list each chunks is_free status and size
     
+    if (EXTRA_DEBUG){
+        char * ptr1 = heap.bytes;
+
+        metadata_t * md_ptr1 = NULL;
+
+        printf("AFTER\n\n");
+
+        while (ptr1 < heap.bytes + MEMLENGTH){
+            md_ptr1 = (metadata_t *) ptr1;
+            printf("POINTER LOCATION: %ld\n", (char*) (md_ptr1) - heap.bytes);
+            printf("SIZE: %d\n", md_ptr1->size);
+            printf("IS_ALLOC: %d\n", !(md_ptr1->is_free));
+            ptr1 = ptr1 + METADATA_SIZE + md_ptr1->size;
+        }
     }
-}
+
+    // coalescing
+
+    char * co_ptr = heap.bytes;
+    metadata_t * md_ptr = NULL;
+
+    while (co_ptr < heap.bytes + MEMLENGTH){
+
+        // get access to metadata chunk
+        md_ptr = (metadata_t *) co_ptr;
+
+        if (EXTRA_DEBUG){
+            printf("SIZE: %d\n", md_ptr->size);
+            printf("IS_ALLOC: %d\n\n", !(md_ptr->is_free));
+        }
+
+        // if this chunk is free and there is a chance that the next chunk is still in our heap's bounds
+        if (md_ptr->is_free && co_ptr + METADATA_SIZE + md_ptr->size < heap.bytes + MEMLENGTH){
+            
+            char * next_ptr = (co_ptr + METADATA_SIZE + md_ptr->size);
+            metadata_t * next_md_ptr = (metadata_t *) next_ptr;
+            
+            // if that next chunk is also free, coalesce it
+            if (next_md_ptr->is_free){
+                if (DEBUG) {printf("try to coalesce\n");}
+                md_ptr->size += METADATA_SIZE + next_md_ptr->size;
+            } 
+            // if it is not free, move on to the next chunk
+            else {
+                co_ptr = co_ptr + METADATA_SIZE + md_ptr->size;
+            }
+        // otherwise, move on to the next chunk
+        } else {
+            // increment ptr to location of next metadata pointer
+            co_ptr = co_ptr + METADATA_SIZE + md_ptr->size;
+        }
+        
+    }
+
+    // parse through bytes array and list each chunks is_free status and size
+    
+    if (DEBUG){
+        char * ptr1 = heap.bytes;
+
+        metadata_t * md_ptr1 = NULL;
+
+        printf("AFTER COALESCING\n\n");
+
+        while (ptr1 < heap.bytes + MEMLENGTH){
+            md_ptr1 = (metadata_t *) ptr1;
+            printf("POINTER LOCATION: %ld\n", (char*) (md_ptr1) - heap.bytes);
+            printf("SIZE: %d\n", md_ptr1->size);
+            printf("IS_ALLOC: %d\n", !(md_ptr1->is_free));
+            ptr1 = ptr1 + METADATA_SIZE + md_ptr1->size;
+        }
+    }
+
+};

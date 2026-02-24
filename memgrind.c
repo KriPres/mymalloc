@@ -10,8 +10,7 @@
 #include "mymalloc.h"
 #endif
 
-#define DEBUG = 0 // flag to show intermediate debugging code (1 to show; 0 to not show)
-
+#define DEBUG 0 // flag to show intermediate debugging code (1 to show; 0 to not show)
 #define NUM_TESTS 50
 
 // STRESS TEST 0 - malloc() and immediately free() a 1-byte object, 120 times.
@@ -44,72 +43,120 @@ void stress_test_1(){
 // (a) allocating a 1-byte object and adding the pointer to the array and 
 // (b) deallocating a random previously allocated object (if any). 
 // Once 120 allocations have been performed, deallocate all remaining objects.
+// array starts with nothing in it
+// if array empty: must allocate
+// if full: must free
+// in between flip a coin
+// 120 mallocs total called - exit; free remaining pointers
+// 10 pointers in array
+// free 5th pointer
+// move from idx 9 to 4
+// 9 remaining
 
 void stress_test_2(){
 
     char * array[120];
+
     srand(time(NULL));
 
-    int count = 0;
+    int total_allocations = 0;
+    int num_allocated_objects = 0;
 
-    while(count < 100){
+    while(total_allocations < 120){
 
         int coin = rand();
 
-        if (coin % 2 == 0){
-            
-        } else {
-            
-        }
-        count++;
+        if (coin % 2 == 0 || num_allocated_objects == 0){ // allocate
 
+            if (DEBUG) {printf("MALLOC\n");}
+
+            char* obj = malloc(1);
+            array[num_allocated_objects] = obj;
+            num_allocated_objects++;
+            total_allocations++;
+            
+        } else{ // free
+
+            int idx_to_free = rand() % num_allocated_objects;
+            
+            if (DEBUG) {printf("FREE\n idx to free [%d], num_allocated_objects[%d]\n", idx_to_free, num_allocated_objects);}
+
+            char * temp = array[idx_to_free];
+            array[idx_to_free] = array[num_allocated_objects-1];
+            array[num_allocated_objects-1] = temp;
+            free(array[num_allocated_objects-1]); 
+            array[num_allocated_objects-1] = NULL;
+            num_allocated_objects--;
+        }
+
+        if (DEBUG){
+
+            for (int i = 0; i < 120; i++){
+                printf("%p ", array[i]);
+            }
+
+            printf("\n\n");
+        }
+
+    }
+
+    for (int i = 0; i < num_allocated_objects; i++){
+        free(array[i]);
     }
 }
 
-// STRESS TEST 3 - Creating a linked list of 120 nodes and then freeing all the nodes
+// 32 byte struct for testing
+typedef struct {
+    char* NetID;
+    int RUID;
+    double GPA;
+    char* major;
+} student_t;
 
-struct ListNode {
-    int val;
-    struct ListNode* next;
-};
+// 16 byte struct
+typedef struct {
+    char* NetID;
+    int RUID;
+} prof_t; 
+
+// STRESS TEST 3 - fill up as much memory as possible by allocating the following arrays:
+// 1. where each element is a pointer to a 32 byte struct
+// 2. where each element is a pointer to a 16 byte struct
+// 3. where each element is a pointer to a 4 byte int
+// Allocate 0th element of each array, then 1st of each, and so on
+// Free 0th element of each array, then 1st of each, and so on
 
 void stress_test_3(){
 
-    struct ListNode* head = malloc(sizeof(struct ListNode));
-    head->val = 0;
+    srand(time(NULL));
 
-    int size_ll = 120;
-    int i = 1;
+    student_t * students[51];
+    prof_t * profs[51];
+    int * my_ints[51];
 
-    struct ListNode* prev = head;
-
-    while (i < size_ll){
-        struct ListNode* tmp = malloc(sizeof(struct ListNode));
-        tmp->val = i;
-        prev->next = tmp;
-        prev = tmp;
-        i++;
+    for (int i = 0; i < 51; i++){
+        student_t *stu = malloc(sizeof(student_t));
+        students[i] = stu;
+        prof_t *prof = malloc(sizeof(prof_t));
+        profs[i] = prof;
+        int * my_i = malloc(sizeof(int));
+        my_ints[i] = my_i;
     }
 
-    struct ListNode* ptr = head;
+    for (int i = 0; i < 51; i++){
+        free(students[i]);
+    }
 
-    struct ListNode* ptr_free = head;
+    for (int i = 0; i < 51; i++){
+        free(profs[i]);
+    }
 
-    while (ptr_free){
-        struct ListNode* next = ptr_free->next;
-        free(ptr_free);
-        ptr_free = next;
+    for (int i = 0; i < 51; i++){
+        free(my_ints[i]);
     }
 
 }
 
-struct BSTNode{
-    int val;
-    struct BSTNode* left;
-    struct BSTNode* right;
-}
-
-// STRESS Test 4 - Creating a BST of 120 nodes and then freeing all of them
 void stress_test_4(){
 
 }
@@ -117,7 +164,6 @@ void stress_test_4(){
 int main(int argc, char ** argv){
 
     struct timeval start, end;
-
     stress_test_3();
 
     gettimeofday(&start, NULL);
@@ -125,6 +171,7 @@ int main(int argc, char ** argv){
     for (int i = 0; i < NUM_TESTS; i++){
         stress_test_0();
         stress_test_1();
+        stress_test_2();
         stress_test_3();
     }
 
