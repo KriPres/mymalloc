@@ -12,6 +12,9 @@
 #define OBJECTS 128
 #define OBJSIZE (MEMSIZE / OBJECTS - HEADERSIZE)
 
+// This test assesses the library's ability to coalesce, by populating memory with
+// 24 byte objects until it is full, freeing all of them, and trying to allocate for 
+// a 48 byte object
 void test_coalesce(int test_num){
 
 	printf("\nTEST %d - COALESCE", test_num);
@@ -71,26 +74,33 @@ void test_coalesce(int test_num){
 
 }
 
+// This tests the alignment of the library by ensuring that amount of memory allocated
+// is indeed the first multiple of 8 greater than or equal to the requested memory
 void test_alignment(int test_num, int bytes){
-	printf("\nTEST %d - ALIGNMENT (%d BYTES)\nBytes that should be allocated: %d\n", test_num, bytes, (bytes+7) & ~7);
+	printf("\nTEST %d - ALIGNMENT (%d BYTES)\nBytes that should be leaked: %d\n", test_num, bytes, (bytes+7) & ~7);
 	int *p = malloc(bytes);
-	if (0) {*p = 214;}
+	if (0) {*p = 214;} // these if 0's make the compiler happy when it checks for warnings
 }
 
+// Tests to confirm that an error is thrown if the capacity requested is too much
 void test_capacity_beginning_too_much(int test_num){
-	printf("\nTEST %d - CAPACITY BEGINNING TOO MUCH\nBytes that should be allocated: 0\n", test_num);
+	printf("\nTEST %d - CAPACITY BEGINNING TOO MUCH\n", test_num);
 	int *p = malloc(MEMSIZE - HEADERSIZE + 1);
 	if (0) {*p = 214;}
 }
 
+// Tests to confirm that the allocator can handle 
+// a request for the max possible amount of memory
 void test_capacity_beginning_just_right(int test_num){
-	printf("\nTEST %d - CAPACITY BEGINNING JUST RIGHT\nBytes that should be allocated: %d\n", test_num, MEMSIZE - HEADERSIZE);
+	printf("\nTEST %d - CAPACITY BEGINNING JUST RIGHT\nBytes that should be leaked: %d\n", test_num, MEMSIZE - HEADERSIZE);
 	int *p = malloc(MEMSIZE - HEADERSIZE);
 	if (0) {*p = 214;}
 }
 
+// Tests to confirm that an error is thrown if the memory requested is too much 
+// after a few valid requests are made
 void test_capacity_in_middle_too_much(int test_num){
-	printf("\nTEST %d - CAPACITY IN MIDDLE TOO MUCH\nBytes that should be allocated: 3000\n", test_num);
+	printf("\nTEST %d - CAPACITY IN MIDDLE TOO MUCH\nBytes that should be leaked: 3000\n", test_num);
 	int *p = malloc(200);
 	int *q = malloc(400);
 	int *r = malloc(800);
@@ -106,32 +116,43 @@ void test_capacity_in_middle_too_much(int test_num){
 	}
 }
 
+// Confirms that an error is thrown if we try to free an address not allocated by malloc
 void test_free_non_malloc_address(int test_num){
-	printf("\nTEST %d - FREE NON MALLOC ADDRESS\nBytes that should be allocated: 0\n", test_num);
+	printf("\nTEST %d - FREE NON MALLOC ADDRESS\n", test_num);
 	int x;
 	free(&x);
 }
 
+// Confirms that an error is thrown if we try to free an address in the middle of a chunk
+// allocated by malloc
 void test_free_middle_of_chunk(int test_num){
-	printf("\nTEST %d - FREE MIDDLE OF CHUNK\nBytes that should be allocated: %ld\n", test_num, sizeof(int)*2);
+	printf("\nTEST %d - FREE MIDDLE OF CHUNK\nBytes that should be leaked: %ld\n", test_num, sizeof(int)*2);
 	int *p = malloc(sizeof(int)*2);
 	free(p + 1);
 }
 
+// Confirms that an error is thrown if we try to free the same pointer twice
 void test_free_same_pointer_twice(int test_num){
-	printf("\nTEST %d - FREE SAME POINTER TWICE\nBytes that should be allocated: 0\n", test_num);
+	printf("\nTEST %d - FREE SAME POINTER TWICE\n", test_num);
 	int *p = malloc(sizeof(int)*100);
 	int *q = p;
 	free(p);
 	free(q);
 }
 
+// Confirms that a normal malloc call does not throw any errors
 void test_normal_malloc(int test_num){
 	printf("\nTEST %d - NORMAL MALLOC\n", test_num);
 	int *p = malloc(sizeof(int));
     *p = 99;
     free(p);
 	printf("End of normal malloc\n");
+}
+
+void test_free_null_pointer(int test_num){
+	printf("\nTEST %d - FREE NULL POINTER\n", test_num);
+	int *p = malloc(0);
+	free(p);
 }
 
 int main(int argc, char ** argv){
@@ -155,6 +176,7 @@ int main(int argc, char ** argv){
 		case 15: test_free_middle_of_chunk(15); break;
 		case 16: test_free_same_pointer_twice(16); break;
 		case 17: test_normal_malloc(17); break;
+		case 18: test_free_null_pointer(18); break;
 	}
 	return EXIT_SUCCESS;
 }

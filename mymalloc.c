@@ -14,7 +14,7 @@ the following key functions:
 
 #define MEMLENGTH 4096 // size of char array to represent memory
 #define DEBUG 1 // flag to show intermediate debugging code (1 to show; 0 to not show)
-#define EXTRA_DEBUG 0 // flag to show more fine-grained debuggin print statments (1 to show; 0 to not show)
+#define EXTRA_DEBUG 0 // flag to show more fine-grained debugging print statments (1 to show; 0 to not show)
 
 // defining bytes char array used to represent memory
 // accessed via heap.bytes
@@ -39,7 +39,7 @@ typedef struct{
 static int initialized = 0;
 
 // leak detector function that displays how much memory is being used across how many objects
-void leak_detector(){
+static void leak_detector(){
 
     int num_objects = 0;
     int total_size = 0;
@@ -74,7 +74,7 @@ void leak_detector(){
 };
 
 // function to initialize heap at the beginning if it has never been used yet
-void heap_init(){
+static void heap_init(){
 
     // define the entire memory as 1 free chunk
     metadata_t * first = (metadata_t *) heap.bytes;
@@ -216,7 +216,7 @@ void * mymalloc (size_t size, char *file, int line){
 
     } else {
         // print to stderr if unable to allocate
-        fprintf(stderr, "Unable to allocate %d bytes (%s:%d)\n", original_size, file, line);
+        fprintf(stderr, "malloc: Unable to allocate %d bytes (%s:%d)\n", original_size, file, line);
         return NULL;
     }
     
@@ -240,7 +240,7 @@ void myfree (void *ptr, char *file, int line){
     }
 
     if (ptr == NULL){
-        fprintf(stderr, "free: Inappropriate pointer (%s:%d)", file, line);
+        fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
         exit(2);
     }
 
@@ -274,15 +274,24 @@ void myfree (void *ptr, char *file, int line){
 
     // if we find the desired *ptr, mark it as free using the is_free flag
     if (found){
+
+        // throw an error if it is already free
         if (md->is_free){
+
             fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
             exit(2);
+        
         } else {
+        
             md->is_free = 1;
+        
         }
     } else {
+        
+        // we could not find the pointer, so throw an error
         fprintf(stderr, "free: Inappropriate pointer (%s:%d)\n", file, line);
         exit(2);
+    
     }
 
     // parse through bytes array and list each chunks is_free status and size

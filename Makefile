@@ -4,7 +4,7 @@ CFLAGS = -std=c99 -g -Wvla -Wall -fsanitize=address,undefined
 # By default, build everything
 .PHONY: all clean
 
-all: memtest memtest_real test memgrind leaker test_real
+all: memtest memtest_real test memgrind leaker test_real memgrind_real
 
 # Provided correctness tester using mymalloc
 memtest: memtest.o mymalloc.o
@@ -25,6 +25,9 @@ test_real: test.c
 # Stress testing 
 memgrind: memgrind.o mymalloc.o
 	$(CC) $(CFLAGS) -o $@ $^
+
+memgrind_real: memgrind.c
+	$(CC) $(CFAGS) -DREALMALLOC -o $@ $^
 
 # Testing with leaks (no free)
 leaker: leakymemtest.o mymalloc.o
@@ -52,4 +55,4 @@ leakymemtest.o: memtest.c mymalloc.h
 
 # remove all previous .o files
 clean:
-	rm -f *.o memtest memtest_real test memgrind leaker test_real
+	rm -f *.o memtest memtest_real test memgrind leaker test_real memgrind_real
