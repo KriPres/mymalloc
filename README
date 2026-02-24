@@ -17,7 +17,6 @@ REQUIREMENTS
     - GNU Make
     - All source files in the same directory
 
-
 BUILDING
 --------
 To compile all programs at once, run:
@@ -25,12 +24,14 @@ To compile all programs at once, run:
     make
 
 This produces the following executables:
-    memgrind       — stress tester (main deliverable)
+    memgrind       — stress tester 
+    memgrind_real  - stress tester using the real system malloc
     memtest        — correctness tester using mymalloc
     memtest_real   — correctness tester using the real system malloc
     test           — individual feature and error tests using mymalloc
     test_real      — same individual tests using the real system malloc
     leaker         — memtest compiled without free() calls to test leak detection
+    leaker_real    - memtest compiled without free() calls and using real system malloc
 
 To remove all compiled files and start fresh:
 
@@ -75,6 +76,11 @@ To run all individual tests automatically:
 
 Note: tests 14, 15, and 16 are expected to terminate early with exit
 code 2. This is correct behavior, not a crash.
+
+You will have to activate execute access for the .sh files by running
+chmod +x ./tests.sh
+chmod +x ./tests_real.sh
+in the terminal
 
 
 RUNNING THE LEAK DETECTION TEST
@@ -208,16 +214,7 @@ Purpose: Validate a pointer, mark its chunk as free, and merge any
         If the pointer is NULL, do nothing and return immediately.
         Freeing NULL is defined by the C standard as a safe no-op.
 
-    Step 2 - Bounds check:
-        Verify that the pointer falls within the valid region of the heap
-        where payloads can exist.
-        The earliest valid payload address is right after the very first
-        metadata block. The latest valid address is before the end of
-        the heap array.
-        If the pointer is outside these bounds, it could not have come
-        from malloc. Print an error and terminate with exit code 2.
-
-    Step 3 - Validity check:
+    Step 2 - Validity check:
         Walk through every chunk in the heap from the beginning.
         At each chunk, check whether the pointer exactly matches the
         start of that chunk's payload.
@@ -226,16 +223,16 @@ Purpose: Validate a pointer, mark its chunk as free, and merge any
         is either in the middle of a chunk or otherwise invalid.
         Print an error and terminate with exit code 2.
 
-    Step 4 - Double free check:
+    Step 3 - Double free check:
         Look at the chunk we just found.
         If it is already marked as free, the user is trying to free
         something that has already been freed.
         Print an error and terminate with exit code 2.
 
-    Step 5 - Free the chunk:
+    Step 4 - Free the chunk:
         Mark the chunk as free.
 
-    Step 6 - Coalesce adjacent free chunks:
+    Step 5 - Coalesce adjacent free chunks:
         Walk through the entire heap from the beginning.
         At each chunk, look at the very next chunk that follows it.
         If both the current chunk and the next chunk are free, merge
@@ -359,9 +356,19 @@ Test cases:
     17:    Sanity check. Performs a normal malloc and free with no errors.
            Expects clean output with no error messages or leak reports.
 
+    18:    Freeing malloc(0). Our program defines malloc(0) as a null pointer.
+           Freeing it should result in an error of trying to free an inappropriate pointer. 
+    
+    19:    Testing malloc with variable sized chunks of data. This will test rounding 
+           and pointer offset behavior rigorously for size of chunk.
+
+    20-24: This set of tests verifies the rounding behavior for whether or not there
+           is enough space in subsegments for further pointers. If there is, we create a free pointer there. Otherwise, we allocate all the remaining space to the newly allocated pointer.    
+
 Run all tests against mymalloc:     ./tests.sh
 Run all tests against real malloc:  ./tests_real.sh
 
+NOTE: outcomes of tests using mymalloc vs. malloc may vary for some cases due to differences in implementation
 
 memgrind.c
 ----------
@@ -398,21 +405,35 @@ Workloads:
         Tests the allocator's ability to handle varied object sizes
         within the same workload.
 
-    Task 4 - [custom workload description here]:
-        [description of what the workload simulates and why]
+    Task 4 - Mixed size allocations, test coalesces, and Rounding up
+        The goal of this test program is to test a lot of the conditional logic of 
+        malloc, under high load. 
+        First, we fill up memory with 32 120-byte int pointers.
+        Then we free every other (all even) and every third (all odd multiples of three)
+        to test the coalescing behavior.
+        This leaves 5 big chunks and 6 small chunks in memory
+        We first fill out the 5 big chunks by allocating memory big enough for the big chunks, but too big for the small chunks, offsetting the desired amount of memory
+        by some values <=15 and some values >=16, to test the rounding behavior.
+        We repeat this process for the 6 small chunks.
+        We then free all the remaining allocated chunks.
+    
+    Task 5 - Linked List Malloc and Free
+        This test creates a linked list of 120 nodes, then frees all 120 nodes.
+        It tests the program's robustness to more complex data structures involving
+        structs containing pointers to other structs.
 
 All five workloads free every object they allocate. There are no
 intentional memory errors or leaks in memgrind.
 
 Output: "Time taken per test: N microseconds"
 
-
 ================================================================================
 KNOWN LIMITATIONS
 ================================================================================
 
 The heap is fixed at 4096 bytes. Requests that exceed the available space
-return NULL with an error message.
+return NULL with an error message. The stress tests also operate under this
+assumption of 4096 bytes.
 
 The allocator uses a first-fit search strategy, meaning it always returns
 the first free chunk large enough, starting from the beginning of the heap.

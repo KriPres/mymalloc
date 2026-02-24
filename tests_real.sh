@@ -16,3 +16,10 @@
 ./test_real 15
 ./test_real 16
 ./test_real 17
+./test_real 18
+./test_real 19
+./test_real 20
+./test_real 21
+./test_real 22
+./test_real 23
+./test_real 24

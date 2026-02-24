@@ -13,7 +13,7 @@ the following key functions:
  */ 
 
 #define MEMLENGTH 4096 // size of char array to represent memory
-#define DEBUG 1 // flag to show intermediate debugging code (1 to show; 0 to not show)
+#define DEBUG 0 // flag to show intermediate debugging code (1 to show; 0 to not show)
 #define EXTRA_DEBUG 0 // flag to show more fine-grained debugging print statments (1 to show; 0 to not show)
 
 // defining bytes char array used to represent memory

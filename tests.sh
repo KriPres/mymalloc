@@ -16,3 +16,10 @@
 ./test 15
 ./test 16
 ./test 17
+./test 18
+./test 19
+./test 20
+./test 21
+./test 22
+./test 23
+./test 24

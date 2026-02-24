@@ -149,10 +149,108 @@ void test_normal_malloc(int test_num){
 	printf("End of normal malloc\n");
 }
 
-void test_free_null_pointer(int test_num){
-	printf("\nTEST %d - FREE NULL POINTER\n", test_num);
+// Confirms that freeing a pointer with no allocated memory throws error 
+// of trying to free a null pointer
+void test_free_malloc_0_pointer(int test_num){
+	printf("\nTEST %d - FREE MALLOC(0) POINTER\n", test_num);
 	int *p = malloc(0);
 	free(p);
+}
+
+// mallocs and frees many pointers of variable size
+void test_variable_size_chunks(int test_num){
+
+	int bytes_to_leak = 0;
+
+	for (int i = 0; i < 30; i++){
+		bytes_to_leak += ((sizeof(int) + 7 * i) + 7) & ~7;
+	}
+
+	printf("\nTEST %d - VARIABLE SIZE CHUNKS\nBytes that should be leaked: %d\n", test_num, bytes_to_leak);
+
+	int * array[30];
+
+	for (int i = 0; i < 30; i++){
+		int* obj = malloc(sizeof(int) + 7 * i);
+		array[i] = obj;
+	}
+
+	if(0){printf("%p\n", array);}
+
+}
+
+// Allocate 1 byte less than all of available memory and confirm that all of
+// memory is allocated based on desired rounding up behavior since
+// < 15 bytes of memory remain
+void test_round_up(int test_num){
+	printf("\nTEST %d - SHOULD ROUND UP\nBytes that should be leaked: %d\n", test_num, MEMSIZE - HEADERSIZE);
+	int * p = malloc(MEMSIZE - HEADERSIZE -1);
+	if(0){*p = 214;}
+}
+
+// Allocate exactly number of bytes so that there is room for 1 free pointer at end
+// of minimal possible size;
+void test_do_not_round_up(int test_num){
+	printf("\nTEST %d - SHOULD ROUND UP\nBytes that should be leaked: %d\n", test_num, MEMSIZE - 3 * HEADERSIZE);
+	int * p = malloc(MEMSIZE - 3 * HEADERSIZE);
+	if(0){*p = 214;}
+}
+
+// Allocate smallest number of bytes needed to round up such that all of memory
+// is one contiguous allocated block and verify this behavior
+void test_round_up_barely(int test_num){
+	printf("\nTEST %d - SHOULD ROUND UP\nBytes that should be leaked: %d\n", test_num, MEMSIZE - HEADERSIZE);
+	int * p = malloc(MEMSIZE - 3 * HEADERSIZE + 1);
+	if(0){*p = 214;}
+}
+
+// Allocate all of memory with 4 chunks
+// Free middle 2 blocks, and allocate chunk that should leave no additional
+// free metadata chunk in middle
+void test_round_up_middle(int test_num){
+
+	int bytes_to_leak = (MEMSIZE - 4 * HEADERSIZE)+ HEADERSIZE;
+	printf("\nTEST %d - SHOULD ROUND UP MIDDLE\nBytes that should be leaked: %d\n", test_num, bytes_to_leak);
+	int * p1 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+	int * p2 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+	int * p3 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+	int * p4 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+
+	free(p2);
+	free(p3);
+
+	int *p5 = malloc((MEMSIZE - 4 * HEADERSIZE)/2);
+
+	if(0){
+		*p1 = 214;
+		*p4 = 214;
+		*p5 = 214;
+	}
+}
+
+// Allocate all of memory with 4 chunks
+// Free middle 2 blocks, and allocate small chunk
+void test_do_not_round_up_middle(int test_num){
+
+	int bytes_to_leak = 3 * (MEMSIZE - 4 * HEADERSIZE)/4;
+	printf("\nTEST %d - SHOULD ROUND UP MIDDLE\nBytes that should be leaked: %d\n", test_num, bytes_to_leak);
+	int * p1 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+	int * p2 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+	int * p3 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+	int * p4 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+
+	free(p2);
+	free(p3);
+
+	int *p5 = malloc((MEMSIZE - 4 * HEADERSIZE)/4);
+
+	if(0){
+		*p1 = 214;
+		*p4 = 214;
+		*p5 = 214;
+	}
+
+
 }
 
 int main(int argc, char ** argv){
@@ -176,7 +274,14 @@ int main(int argc, char ** argv){
 		case 15: test_free_middle_of_chunk(15); break;
 		case 16: test_free_same_pointer_twice(16); break;
 		case 17: test_normal_malloc(17); break;
-		case 18: test_free_null_pointer(18); break;
+		case 18: test_free_malloc_0_pointer(18); break;
+		case 19: test_variable_size_chunks(19); break;
+		case 20: test_round_up(20); break;
+		case 21: test_do_not_round_up(21); break;
+		case 22: test_round_up_barely(22); break;
+		case 23: test_round_up_middle(23); break;
+		case 24: test_do_not_round_up_middle(24); break;
+
 	}
 	return EXIT_SUCCESS;
 }

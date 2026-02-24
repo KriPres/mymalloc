@@ -240,8 +240,6 @@ void stress_test_5(){
         i++;
     }
 
-    struct ListNode* ptr = head;
-
     struct ListNode* ptr_free = head;
 
     while (ptr_free){
@@ -256,25 +254,26 @@ int main(int argc, char ** argv){
 
     struct timeval start, end;
 
-    stress_test_5();
+    gettimeofday(&start, NULL);
 
-    // gettimeofday(&start, NULL);
+    // run all tests, 50 times in total
+    for (int i = 0; i < NUM_TESTS; i++){
+        stress_test_0();
+        stress_test_1();
+        stress_test_2();
+        stress_test_3();
+        stress_test_4();
+        stress_test_5();
+    }
 
-    // for (int i = 0; i < NUM_TESTS; i++){
-    //     stress_test_0();
-    //     stress_test_1();
-    //     stress_test_2();
-    //     stress_test_3();
-    //     stress_test_4();
-    //     stress_test_5();
-    // }
+    gettimeofday(&end, NULL);
 
-    // gettimeofday(&end, NULL);
+    // compute average time per run of all 6 tests
 
-    // unsigned long end_time = (end.tv_sec * 1000000 + end.tv_usec);
-    // unsigned long start_time = (start.tv_sec * 1000000 + start.tv_usec);
+    unsigned long end_time = (end.tv_sec * 1000000 + end.tv_usec);
+    unsigned long start_time = (start.tv_sec * 1000000 + start.tv_usec);
 
-    // printf("Time taken per test: %ld micro seconds\n", (end_time - start_time) / NUM_TESTS);
+    printf("Time taken per test: %ld micro seconds\n", (end_time - start_time) / NUM_TESTS);
 	
     return EXIT_SUCCESS;
 }
