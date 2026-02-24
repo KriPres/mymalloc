@@ -1,8 +1,429 @@
-Krishaan Chaudhary kac551
-Aryaman Mishra am4021
+================================================================================
+CS 214 - Project 1: My Little malloc()
+================================================================================
 
-Test plan:
+AUTHORS
+-------
+Name:  Krishaan Chaudhary      NetID: kac551
+Name:  Aryaman Mishra          NetID: am4021
 
-Description of Test Programs
+================================================================================
+HOW TO BUILD AND RUN
+================================================================================
 
-Design Notes
+REQUIREMENTS
+------------
+    - GCC compiler (tested on iLab with gcc)
+    - GNU Make
+    - All source files in the same directory
+
+
+BUILDING
+--------
+To compile all programs at once, run:
+
+    make
+
+This produces the following executables:
+    memgrind       — stress tester (main deliverable)
+    memtest        — correctness tester using mymalloc
+    memtest_real   — correctness tester using the real system malloc
+    test           — individual feature and error tests using mymalloc
+    test_real      — same individual tests using the real system malloc
+    leaker         — memtest compiled without free() calls to test leak detection
+
+To remove all compiled files and start fresh:
+
+    make clean
+
+
+RUNNING THE STRESS TESTER
+--------------------------
+    ./memgrind
+
+No arguments needed. Runs all five workloads 50 times each and prints
+the average time per run in microseconds.
+
+
+RUNNING THE CORRECTNESS TESTER
+--------------------------------
+    ./memtest
+
+No arguments needed. Allocates 64 objects, fills them with distinct byte
+patterns, verifies no object was overwritten, then frees everything.
+Expected output: "0 incorrect bytes"
+
+To run the same test with the real system malloc for comparison:
+
+    ./memtest_real
+
+
+RUNNING THE INDIVIDUAL TESTS
+------------------------------
+    ./test <test_number>
+
+Where test_number is an integer from 0 to 17. For example:
+
+    ./test 17      runs the normal malloc/free sanity check
+    ./test 14      runs the stack variable free error test
+    ./test 10      runs the coalescing test
+
+To run all individual tests automatically:
+
+    ./tests.sh           runs all 18 tests using mymalloc
+    ./tests_real.sh      runs all 18 tests using real malloc
+
+Note: tests 14, 15, and 16 are expected to terminate early with exit
+code 2. This is correct behavior, not a crash.
+
+
+RUNNING THE LEAK DETECTION TEST
+---------------------------------
+    ./leaker
+
+Runs memtest without calling free(), so all 64 objects remain allocated
+at exit. The leak detector should fire and print something like:
+
+    mymalloc: N bytes leaked in 64 objects.
+
+
+USING THE LIBRARY IN YOUR OWN CODE
+------------------------------------
+To use mymalloc in any C program:
+
+    1. Include stdlib.h before mymalloc.h:
+           #include <stdlib.h>
+           #include "mymalloc.h"
+
+    2. Use malloc() and free() as normal — the macros in mymalloc.h
+       automatically redirect all calls to mymalloc() and myfree().
+
+    3. Compile and link against mymalloc.o:
+           gcc -o myprogram myprogram.o mymalloc.o
+
+    No explicit initialization is required. The heap initializes itself
+    on the first call to malloc() or free().
+
+================================================================================
+DESIGN NOTES
+================================================================================
+
+OVERVIEW
+--------
+This project implements a custom heap allocator using a fixed 4096-byte global
+array. The allocator manages memory by dividing the array into variable-sized
+chunks, each consisting of an 8-byte metadata block followed by a payload of
+variable size.
+
+DATA STRUCTURE
+--------------
+The heap is modeled as an implicit linked list of contiguous chunks. Each chunk
+has two parts:
+
+    [ METADATA (8 bytes) | PAYLOAD (variable size, always multiple of 8) ]
+
+The metadata block tracks two pieces of information about each chunk:
+    - How large the payload is (in bytes)
+    - Whether the chunk is currently free or allocated
+
+Since chunks are always laid out one after another in memory with no gaps,
+no explicit pointer to the next chunk is needed. You can always find the next
+chunk by jumping forward by the size of one metadata block plus the size of
+the current payload.
+
+The heap array is declared inside a union with a double-precision float. This
+forces the entire array to start at an 8-byte aligned address, which is
+required so that payloads handed to users are also properly aligned.
+
+
+ALIGNMENT
+---------
+Every allocation is rounded up to the nearest multiple of 8 bytes before
+being placed in the heap. For example, a request for 1 byte actually reserves
+8 bytes, a request for 9 bytes reserves 16 bytes, and so on. This guarantees
+that every payload starts at an address that is divisible by 8, which is
+required for safe use with any C data type.
+
+The rounding is done using a standard bitwise trick: add 7 to the requested
+size, then clear the last 3 bits of the result.
+
+
+================================================================================
+ALGORITHM: mymalloc()
+================================================================================
+
+Purpose: Find a free region of the heap large enough for the request,
+         mark it as allocated, and return a pointer to its payload.
+
+    Step 1 - Setup:
+        If the heap has never been used before, initialize it first.
+        If the requested size is zero, return NULL immediately.
+        Round the requested size up to the nearest multiple of 8.
+
+    Step 2 - Search:
+        Start at the very beginning of the heap.
+        Walk forward through every chunk one at a time.
+        At each chunk, ask two questions:
+            Is this chunk currently free?
+            Is this chunk's payload large enough for our request?
+        If both answers are yes, stop here — we found a suitable chunk.
+        If either answer is no, jump to the next chunk and repeat.
+
+    Step 3 - Split (if the found chunk is much larger than needed):
+        Before handing the whole chunk to the user, check if it is worth
+        splitting into two smaller chunks.
+        Splitting is worthwhile only if the leftover space after carving
+        out the requested amount is large enough to hold a new metadata
+        block plus at least 8 bytes of payload.
+        If splitting is worthwhile:
+            Write a new free metadata block immediately after the
+            requested payload, describing the remaining free space.
+            Shrink the current chunk's recorded size down to exactly
+            the requested amount.
+        If splitting is not worthwhile:
+            Give the user the whole chunk as-is. The user receives
+            slightly more memory than requested, which is allowed.
+
+    Step 4 - Allocate:
+        Mark the chunk as no longer free.
+        Return a pointer that points just past the metadata block,
+        i.e. to the first byte of the payload.
+
+    Step 5 - Failure:
+        If the entire heap was searched and no suitable chunk was found,
+        print an error message to standard error showing how many bytes
+        were requested and which line of code made the request.
+        Return NULL.
+
+
+================================================================================
+ALGORITHM: myfree()
+================================================================================
+
+Purpose: Validate a pointer, mark its chunk as free, and merge any
+         neighboring free chunks to prevent fragmentation.
+
+    Step 1 - Basic checks:
+        If the heap has never been used before, initialize it first.
+        If the pointer is NULL, do nothing and return immediately.
+        Freeing NULL is defined by the C standard as a safe no-op.
+
+    Step 2 - Bounds check:
+        Verify that the pointer falls within the valid region of the heap
+        where payloads can exist.
+        The earliest valid payload address is right after the very first
+        metadata block. The latest valid address is before the end of
+        the heap array.
+        If the pointer is outside these bounds, it could not have come
+        from malloc. Print an error and terminate with exit code 2.
+
+    Step 3 - Validity check:
+        Walk through every chunk in the heap from the beginning.
+        At each chunk, check whether the pointer exactly matches the
+        start of that chunk's payload.
+        If an exact match is found, stop walking.
+        If the entire heap is walked without finding a match, the pointer
+        is either in the middle of a chunk or otherwise invalid.
+        Print an error and terminate with exit code 2.
+
+    Step 4 - Double free check:
+        Look at the chunk we just found.
+        If it is already marked as free, the user is trying to free
+        something that has already been freed.
+        Print an error and terminate with exit code 2.
+
+    Step 5 - Free the chunk:
+        Mark the chunk as free.
+
+    Step 6 - Coalesce adjacent free chunks:
+        Walk through the entire heap from the beginning.
+        At each chunk, look at the very next chunk that follows it.
+        If both the current chunk and the next chunk are free, merge
+        them into one larger free chunk by absorbing the next chunk's
+        metadata and payload into the current chunk's payload.
+        Do not advance forward after merging — stay at the current
+        position and check again, since the chunk after the newly
+        merged one might also be free.
+        If the current chunk is not free, or the next chunk is not free,
+        advance forward to the next chunk and repeat.
+        Continue until the end of the heap is reached.
+
+
+================================================================================
+ALGORITHM: leak_detector()
+================================================================================
+
+Purpose: At program exit, report any heap memory that was allocated but
+         never freed.
+
+Note: This function is registered with atexit() during heap initialization
+      and runs automatically when the program terminates. It must never
+      call exit() itself.
+
+    Step 1:
+        Start a counter for the number of leaked objects at zero.
+        Start a counter for the total number of leaked bytes at zero.
+
+    Step 2:
+        Walk through every chunk in the heap from the beginning.
+        For each chunk that is still marked as allocated:
+            Add one to the object counter.
+            Add the chunk's payload size to the byte counter.
+
+    Step 3:
+        If the object counter is greater than zero, print a message to
+        standard error in the format:
+            "mymalloc: N bytes leaked in M objects."
+        where N is the total bytes and M is the number of objects.
+        If no leaks were found, print nothing.
+
+
+================================================================================
+ERROR DETECTION SUMMARY
+================================================================================
+
+mymalloc() errors:
+    If no free chunk large enough exists, returns NULL and prints:
+        "malloc: Unable to allocate N bytes (file.c:line)"
+
+myfree() errors (all terminate the process with exit code 2):
+    Pointer is outside the heap entirely.
+        Example: passing the address of a local variable.
+    Pointer is inside the heap but not at the start of any payload.
+        Example: passing a pointer that is offset into the middle of a chunk.
+    Pointer points to a chunk that is already marked as free.
+        Example: calling free twice on the same pointer.
+
+    All three cases print:
+        "free: Inappropriate pointer (file.c:line)"
+
+
+================================================================================
+TEST PROGRAMS
+================================================================================
+
+memtest.c
+---------
+Tests that malloc() reserves non-overlapping memory regions.
+
+Strategy:
+    Allocate 64 objects of equal size to fill the heap.
+    Fill each object with a distinct repeated byte (object i filled with i).
+    After all objects are filled, check every byte of every object.
+    If any byte has been overwritten by another allocation, report an error.
+    Free all objects at the end.
+
+Arguments: none
+Expected output: "0 incorrect bytes"
+
+Can be compiled with -DREALMALLOC to run against the real system malloc
+for comparison, and with -DLEAK to skip the free calls and trigger the
+leak detector.
+
+
+test.c
+------
+A comprehensive test suite covering individual behaviors and edge cases.
+
+Usage: ./test <test_number>
+
+Test cases:
+    0-9:   Alignment tests requesting 0 through 9 bytes. Verifies that the
+           allocator rounds each size up to the correct multiple of 8.
+           These tests intentionally do not free the allocation so that
+           the leak detector output can be observed.
+
+    10:    Coalesce test. Fills the heap with many small objects, frees
+           them all, then attempts to allocate a larger object that would
+           only fit if adjacent free chunks were properly merged.
+
+    11:    Capacity test. Requests more bytes than the heap can ever hold.
+           Expects malloc to return NULL and print an error message.
+
+    12:    Capacity test. Requests exactly the maximum available payload
+           space in a fresh heap. Expects malloc to succeed.
+
+    13:    Capacity test. Makes several allocations that together exhaust
+           the heap, then attempts one more. Expects the last one to fail.
+
+    14:    Error test. Calls free with the address of a stack variable.
+           Expects the program to print an error and exit with code 2.
+
+    15:    Error test. Calls free with a pointer into the middle of an
+           allocated chunk. Expects the program to print an error and
+           exit with code 2.
+
+    16:    Error test. Calls free on the same pointer twice.
+           Expects the program to print an error and exit with code 2.
+
+    17:    Sanity check. Performs a normal malloc and free with no errors.
+           Expects clean output with no error messages or leak reports.
+
+Run all tests against mymalloc:     ./tests.sh
+Run all tests against real malloc:  ./tests_real.sh
+
+
+memgrind.c
+----------
+Stress tester that runs five workloads 50 times each and reports the
+average time taken per run in microseconds.
+
+Usage: ./memgrind (no arguments)
+
+Workloads:
+
+    Task 0 - Rapid alloc and free:
+        Allocate a single 1-byte object and immediately free it.
+        Repeat this 120 times in a row.
+        Tests the allocator's performance on the simplest possible pattern.
+
+    Task 1 - Batch alloc then batch free:
+        Allocate 120 separate 1-byte objects, storing each pointer.
+        Once all 120 are allocated, free them all in order.
+        Tests behavior when many objects are live at the same time.
+
+    Task 2 - Random alloc and free:
+        Maintain a pool of up to 120 live pointers.
+        Repeatedly flip a coin to decide whether to allocate a new
+        1-byte object or free a randomly chosen existing one.
+        Always allocate if the pool is empty.
+        Stop once 120 total allocations have been made.
+        Free any remaining live objects at the end.
+        Tests fragmentation and reuse behavior under random access patterns.
+
+    Task 3 - Mixed struct sizes:
+        Allocate arrays of three different struct sizes simultaneously,
+        interleaving the allocations across all three arrays.
+        Free all objects after allocation is complete.
+        Tests the allocator's ability to handle varied object sizes
+        within the same workload.
+
+    Task 4 - [custom workload description here]:
+        [description of what the workload simulates and why]
+
+All five workloads free every object they allocate. There are no
+intentional memory errors or leaks in memgrind.
+
+Output: "Time taken per test: N microseconds"
+
+
+================================================================================
+KNOWN LIMITATIONS
+================================================================================
+
+The heap is fixed at 4096 bytes. Requests that exceed the available space
+return NULL with an error message.
+
+The allocator uses a first-fit search strategy, meaning it always returns
+the first free chunk large enough, starting from the beginning of the heap.
+This is simple but can lead to fragmentation over time for certain allocation
+patterns. Coalescing on every free call reduces this significantly.
+
+realloc() is not implemented.
+
+Use-after-free errors cannot be detected because they do not involve any
+call to malloc() or free() and leave no observable trace in the metadata.
+
+The minimum chunk size is 16 bytes (8 bytes of metadata plus at least 8
+bytes of payload). A request for even 1 byte consumes 16 bytes of heap
+space total.
